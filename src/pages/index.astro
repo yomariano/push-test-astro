@@ -1,0 +1,336 @@
+---
+// No server-side code needed for this test
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Push Notification Test - Astro</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      .container {
+        background: white;
+        padding: 30px;
+        border-radius: 12px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      }
+      h1 {
+        color: #333;
+        margin-bottom: 20px;
+      }
+      button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 16px;
+        margin: 10px 10px 10px 0;
+        transition: background 0.2s;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      .status {
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 6px;
+        font-weight: 500;
+      }
+      .success {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+      .error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+      .info {
+        background: #cce7ff;
+        color: #004085;
+        border: 1px solid #b0d4f1;
+      }
+      .log {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 6px;
+        max-height: 300px;
+        overflow-y: auto;
+        font-family: 'Courier New', monospace;
+        font-size: 14px;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🔔 Push Notification Test (Astro)</h1>
+      
+      <p>This is a simple Astro.js app to test push notifications without Next.js SSR complications.</p>
+      
+      <div id="status" class="status info">
+        Checking browser support...
+      </div>
+
+      <div>
+        <button id="subscribe-btn" disabled>Enable Push Notifications</button>
+        <button id="test-btn" disabled>Send Test Notification</button>
+        <button id="permission-btn">Check Permissions</button>
+        <button id="clear-btn">Clear Logs</button>
+      </div>
+
+      <div id="logs" class="log">
+        Loading...
+      </div>
+    </div>
+
+    <script>
+      // VAPID public key (you'll need to generate this)
+      const VAPID_PUBLIC_KEY = 'BNxMHYk4kO5TzWd3gXY0l73YGKqW1FNVXJq2fK4KrklGOOiO7qLQ5L8UmB5MoJ0OLpWqTqFhSbQ8MCYcgNOXGqo';
+
+      // Logging utility
+      const logElement = document.getElementById('logs');
+      const statusElement = document.getElementById('status');
+
+      function log(message) {
+        console.log(message);
+        const timestamp = new Date().toLocaleTimeString();
+        logElement.textContent += `[${timestamp}] ${message}\n`;
+        logElement.scrollTop = logElement.scrollHeight;
+      }
+
+      function setStatus(message, type = 'info') {
+        statusElement.textContent = message;
+        statusElement.className = `status ${type}`;
+      }
+
+      // Convert VAPID key to Uint8Array
+      function urlBase64ToUint8Array(base64String) {
+        const padding = '='.repeat((4 - base64String.length % 4) % 4);
+        const base64 = (base64String + padding)
+          .replace(/-/g, '+')
+          .replace(/_/g, '/');
+
+        const rawData = window.atob(base64);
+        const outputArray = new Uint8Array(rawData.length);
+
+        for (let i = 0; i < rawData.length; ++i) {
+          outputArray[i] = rawData.charCodeAt(i);
+        }
+        return outputArray;
+      }
+
+      // Check browser support
+      async function checkSupport() {
+        log('Checking browser support...');
+        
+        if (!('serviceWorker' in navigator)) {
+          setStatus('Service Worker not supported', 'error');
+          log('❌ Service Worker not supported');
+          return false;
+        }
+
+        if (!('PushManager' in window)) {
+          setStatus('Push Manager not supported', 'error');
+          log('❌ Push Manager not supported');
+          return false;
+        }
+
+        if (!('Notification' in window)) {
+          setStatus('Notifications not supported', 'error');
+          log('❌ Notifications not supported');
+          return false;
+        }
+
+        log('✅ Browser supports push notifications');
+        setStatus('Browser supports push notifications', 'success');
+        return true;
+      }
+
+      // Register service worker
+      async function registerServiceWorker() {
+        try {
+          log('Registering service worker...');
+          const registration = await navigator.serviceWorker.register('/sw.js');
+          log(`✅ Service Worker registered: ${registration.scope}`);
+          return registration;
+        } catch (error) {
+          log(`❌ Service Worker registration failed: ${error.message}`);
+          setStatus('Service Worker registration failed', 'error');
+          throw error;
+        }
+      }
+
+      // Subscribe to push notifications
+      async function subscribeToPush() {
+        try {
+          log('🔔 Starting push subscription...');
+          
+          // Request permission
+          log('Requesting notification permission...');
+          const permission = await Notification.requestPermission();
+          log(`Permission result: ${permission}`);
+
+          if (permission !== 'granted') {
+            setStatus('Notification permission denied', 'error');
+            log('❌ Notification permission denied');
+            return false;
+          }
+
+          // Get service worker registration
+          const registration = await navigator.serviceWorker.ready;
+          log('Got service worker registration');
+
+          // Check for existing subscription
+          let subscription = await registration.pushManager.getSubscription();
+          
+          if (!subscription) {
+            log('Creating new push subscription...');
+            subscription = await registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+            });
+            log('✅ New push subscription created');
+          } else {
+            log('✅ Using existing push subscription');
+          }
+
+          log('Subscription details:');
+          log(`- Endpoint: ${subscription.endpoint}`);
+          log(`- Keys: ${Object.keys(subscription.toJSON().keys || {}).join(', ')}`);
+
+          setStatus('Push notifications enabled!', 'success');
+          document.getElementById('test-btn').disabled = false;
+          document.getElementById('subscribe-btn').disabled = true;
+          
+          return true;
+        } catch (error) {
+          log(`❌ Push subscription failed: ${error.message}`);
+          setStatus('Push subscription failed', 'error');
+          return false;
+        }
+      }
+
+      // Send test notification (client-side test)
+      async function sendTestNotification() {
+        try {
+          log('🧪 Sending test notification...');
+          
+          // Check if we have a subscription
+          const registration = await navigator.serviceWorker.ready;
+          const subscription = await registration.pushManager.getSubscription();
+          
+          if (!subscription) {
+            log('❌ No push subscription found');
+            setStatus('Please subscribe first', 'error');
+            return;
+          }
+
+          // For this test, we'll just show a direct notification
+          // In a real app, you'd send the subscription to your server
+          log('Showing direct notification (bypassing server)...');
+          
+          const notification = new Notification('🧪 Astro Push Test', {
+            body: 'This is a test notification from the Astro app!',
+            icon: '/favicon.ico',
+            tag: 'astro-test',
+            requireInteraction: false,
+            data: {
+              url: '/',
+              timestamp: Date.now()
+            }
+          });
+
+          notification.onclick = () => {
+            log('Notification clicked!');
+            window.focus();
+            notification.close();
+          };
+
+          log('✅ Test notification sent');
+          setStatus('Test notification sent!', 'success');
+          
+        } catch (error) {
+          log(`❌ Test notification failed: ${error.message}`);
+          setStatus('Test notification failed', 'error');
+        }
+      }
+
+      // Check current permissions
+      function checkPermissions() {
+        log('Checking notification permissions...');
+        const permission = Notification.permission;
+        log(`Current permission: ${permission}`);
+        
+        switch (permission) {
+          case 'granted':
+            setStatus('Notifications are allowed', 'success');
+            break;
+          case 'denied':
+            setStatus('Notifications are blocked', 'error');
+            log('💡 To enable: Click the lock icon in address bar → Allow notifications');
+            break;
+          case 'default':
+            setStatus('Notifications permission not requested yet', 'info');
+            break;
+        }
+      }
+
+      // Clear logs
+      function clearLogs() {
+        logElement.textContent = '';
+        log('Logs cleared');
+      }
+
+      // Initialize app
+      async function init() {
+        log('🚀 Initializing Astro Push Test App...');
+        
+        // Clear initial loading message
+        logElement.textContent = '';
+        
+        const isSupported = await checkSupport();
+        if (!isSupported) {
+          return;
+        }
+
+        try {
+          await registerServiceWorker();
+          document.getElementById('subscribe-btn').disabled = false;
+        } catch (error) {
+          log(`❌ Initialization failed: ${error.message}`);
+        }
+
+        checkPermissions();
+        log('✅ App initialized successfully');
+      }
+
+      // Event listeners
+      document.getElementById('subscribe-btn').addEventListener('click', subscribeToPush);
+      document.getElementById('test-btn').addEventListener('click', sendTestNotification);
+      document.getElementById('permission-btn').addEventListener('click', checkPermissions);
+      document.getElementById('clear-btn').addEventListener('click', clearLogs);
+
+      // Start the app
+      init();
+    </script>
+  </body>
+</html>
