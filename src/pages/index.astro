@@ -110,20 +110,20 @@
       const logElement = document.getElementById('logs');
       const statusElement = document.getElementById('status');
 
-      function log(message) {
+      function log(message: string) {
         console.log(message);
         const timestamp = new Date().toLocaleTimeString();
         logElement.textContent += `[${timestamp}] ${message}\n`;
         logElement.scrollTop = logElement.scrollHeight;
       }
 
-      function setStatus(message, type = 'info') {
+      function setStatus(message: string, type = 'info') {
         statusElement.textContent = message;
         statusElement.className = `status ${type}`;
       }
 
       // Convert VAPID key to Uint8Array
-      function urlBase64ToUint8Array(base64String) {
+      function urlBase64ToUint8Array(base64String: string) {
         const padding = '='.repeat((4 - base64String.length % 4) % 4);
         const base64 = (base64String + padding)
           .replace(/-/g, '+')
@@ -218,8 +218,8 @@
           log(`- Keys: ${Object.keys(subscription.toJSON().keys || {}).join(', ')}`);
 
           setStatus('Push notifications enabled!', 'success');
-          document.getElementById('test-btn').disabled = false;
-          document.getElementById('subscribe-btn').disabled = true;
+          (document.getElementById('test-btn') as HTMLButtonElement).disabled = false;
+          (document.getElementById('subscribe-btn') as HTMLButtonElement).disabled = true;
           
           return true;
         } catch (error) {
@@ -314,7 +314,7 @@
 
         try {
           await registerServiceWorker();
-          document.getElementById('subscribe-btn').disabled = false;
+          (document.getElementById('subscribe-btn') as HTMLButtonElement).disabled = false;
         } catch (error) {
           log(`❌ Initialization failed: ${error.message}`);
         }
